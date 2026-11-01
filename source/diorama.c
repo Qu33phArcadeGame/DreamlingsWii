@@ -106,9 +106,9 @@ static void set_camera(float tx, float tz) {
         GX_LoadProjectionMtx(proj, GX_PERSPECTIVE);
         /* guLookAt(mt, cam, up, look) -- up is the third argument. */
         guLookAt(view,
-                 (guVector){cam_target_x + 1.5f, 4.2f, cam_target_z + 9.0f},
-                 (guVector){0.0f, 1.0f, 0.0f},
-                 (guVector){cam_target_x, 0.5f, cam_target_z});
+                 &(guVector){cam_target_x + 1.5f, 4.2f, cam_target_z + 9.0f},
+                 &(guVector){0.0f, 1.0f, 0.0f},
+                 &(guVector){cam_target_x, 0.5f, cam_target_z});
         GX_LoadPosMtxImm(view, GX_PNMTX0);
     }
 }
