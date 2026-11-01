@@ -21,6 +21,8 @@
 #include "cnn.h"
 #include "dreamlings.h"
 #include "diorama.h"
+#include "dreamcore_map.h"
+#include "dreamcore_world.h"
 
 enum { ST_TITLE, ST_SELECT, ST_WORLD, ST_DREAM, ST_SLOT, ST_GALLERY };
 
@@ -31,7 +33,7 @@ static int ncollected = 0;
 static unsigned char dream_img[576];
 static unsigned char fused[11][576];
 static int nfused = 0;
-static float px_x = 8.0f, pz_z = 6.0f;
+static float px_x = 4.5f, pz_z = 25.5f;
 static int frame = 0;
 static u32 rng_state = 12345;
 
@@ -40,13 +42,21 @@ static u32 xrnd(void) {
     return (rng_state >> 16) & 0x7FFF;
 }
 
-/* Gate rectangles in arena units (DS gates rescaled by 16px/unit). */
-static const float gates[3][4] = {
-    {1.9f, 2.5f, 4.15f, 4.75f},
-    {11.9f, 2.5f, 14.15f, 4.75f},
-    {6.9f, 8.1f, 9.15f, 10.35f},
-};
-static const float slot_rect[4] = {12.5f, 8.75f, 14.5f, 10.75f};
+/* Dream Core triggers (Phase 1): generator building -> dream screen,
+ * water-machine tiles -> slot screen. Warp doors are inert for now
+ * (room1/hall1 do not exist on Wii yet); DC_ENC zone encounters
+ * arrive in the encounter phase. */
+static const float gen_rect[4] = {33.0f, 27.0f, 36.0f, 29.0f};
+
+static int near_machine(float x, float z) {
+    int i;
+    for (i = 0; i < 3; i++) {
+        float mx = DC_MACHINES[i].x + 0.5f, mz = DC_MACHINES[i].y + 0.5f;
+        if (x + 0.75f > mx - 0.5f && x - 0.75f < mx + 0.5f &&
+            z + 0.75f > mz - 0.5f && z - 0.75f < mz + 0.5f) return 1;
+    }
+    return 0;
+}
 
 static int near_rect(float x, float z, const float *r) {
     return x + 0.75f > r[0] && x - 0.75f < r[2] &&
@@ -105,6 +115,7 @@ int main(int argc, char **argv) {
 
     rmode = VIDEO_GetPreferredMode(NULL);
     dio_wii_init(rmode);
+    dc_wii_set_mode(rmode);
 
     while (1) {
         WPAD_ScanPads();
@@ -116,12 +127,12 @@ int main(int argc, char **argv) {
 
         if (state == ST_TITLE) {
             dio_wii_clear_colour(10, 0, 16);
-            dio_wii_draw_world(8.0f, 6.0f, DREAMLINGS[selected]);
+            dc_draw_world(8.0f, 6.0f, DREAMLINGS[selected]);
             dio_wii_draw_billboard(8.0f, 3.0f, 7.5f, 5.0f, DREAMLINGS[selected]);
             if (buttons_down(0, WPAD_BUTTON_A)) state = ST_SELECT;
         } else if (state == ST_SELECT) {
             dio_wii_clear_colour(5, 0, 10);
-            dio_wii_draw_world(8.0f, 6.0f, DREAMLINGS[selected]);
+            dc_draw_world(8.0f, 6.0f, DREAMLINGS[selected]);
             for (i = 0; i < 11; i++) {
                 float gx = 2.0f + (i % 6) * 2.4f;
                 float gy = 4.5f - (i / 6) * 3.0f;
@@ -140,6 +151,7 @@ int main(int argc, char **argv) {
             if (buttons_down(0, WPAD_BUTTON_B)) state = ST_TITLE;
         } else if (state == ST_WORLD) {
             float speed = buttons_held(0, WPAD_BUTTON_B) ? 0.30f : 0.15f;
+            float old_x = px_x, old_z = pz_z;
             /* Nunchuk stick, if present, moves like the D-pad. */
             {
                 WPADData *wd = WPAD_Data(0);
@@ -156,31 +168,28 @@ int main(int argc, char **argv) {
             if (buttons_held(0, WPAD_BUTTON_RIGHT)) px_x += speed;
             if (buttons_held(0, WPAD_BUTTON_UP)) pz_z -= speed;
             if (buttons_held(0, WPAD_BUTTON_DOWN)) pz_z += speed;
-            if (px_x < 0.75f) px_x = 0.75f; if (px_x > 15.25f) px_x = 15.25f;
-            if (pz_z < 0.75f) pz_z = 0.75f; if (pz_z > 11.25f) pz_z = 11.25f;
+            if (px_x < 0.75f) px_x = 0.75f; if (px_x > 39.25f) px_x = 39.25f;
+            if (pz_z < 0.75f) pz_z = 0.75f; if (pz_z > 29.25f) pz_z = 29.25f;
+            /* Solid tiles block: step back out if we entered one. */
+            if (DC_SOLID[(int)pz_z][(int)px_x]) { px_x = old_x; pz_z = old_z; }
 
-            dio_wii_draw_world(px_x, pz_z, DREAMLINGS[selected]);
+            dc_draw_world(px_x, pz_z, DREAMLINGS[selected]);
 
             if (buttons_down(0, WPAD_BUTTON_A)) {
-                int g;
-                for (g = 0; g < 3; g++) {
-                    if (near_rect(px_x, pz_z, gates[g])) {
-                        memcpy(dream_img, DREAMLINGS[selected], 576);
-                        cnn_forward(dream_img);
-                        dream_ch = cnn_best_channel();
-                        dream_iter = 0;
-                        state = ST_DREAM;
-                        break;
-                    }
-                }
-                if (state == ST_WORLD && near_rect(px_x, pz_z, slot_rect)) {
+                if (near_rect(px_x, pz_z, gen_rect)) {
+                    memcpy(dream_img, DREAMLINGS[selected], 576);
+                    cnn_forward(dream_img);
+                    dream_ch = cnn_best_channel();
+                    dream_iter = 0;
+                    state = ST_DREAM;
+                } else if (near_machine(px_x, pz_z)) {
                     slot_spinning = 0; slot_stopped = 0;
                     state = ST_SLOT;
                 }
             }
             if (buttons_down(0, WPAD_BUTTON_MINUS)) state = ST_GALLERY;
         } else if (state == ST_DREAM) {
-            dio_wii_draw_world(px_x, pz_z, dream_img);
+            dc_draw_world(px_x, pz_z, dream_img);
             if (dream_iter < dream_total) {
                 cnn_dream_step(dream_img, dream_ch, 16);
                 dream_iter++;
@@ -189,7 +198,7 @@ int main(int argc, char **argv) {
             if (dream_iter >= dream_total && buttons_down(0, WPAD_BUTTON_A))
                 state = ST_WORLD;
         } else if (state == ST_SLOT) {
-            dio_wii_draw_world(px_x, pz_z, DREAMLINGS[selected]);
+            dc_draw_world(px_x, pz_z, DREAMLINGS[selected]);
             if (!slot_spinning && buttons_down(0, WPAD_BUTTON_A)) {
                 slot_spinning = 1; slot_stopped = 0;
             }
@@ -216,7 +225,7 @@ int main(int argc, char **argv) {
             if (buttons_down(0, WPAD_BUTTON_B) && !slot_spinning) state = ST_WORLD;
         } else if (state == ST_GALLERY) {
             int idx = 0;
-            dio_wii_draw_world(px_x, pz_z, DREAMLINGS[selected]);
+            dc_draw_world(px_x, pz_z, DREAMLINGS[selected]);
             for (i = 0; i < 11; i++) {
                 if (!collected[i]) continue;
                 dio_wii_draw_billboard(2.0f + (idx % 6) * 2.4f, 4.5f - (idx / 6) * 3.0f, 7.5f, 2.0f, DREAMLINGS[i]);
