@@ -1,0 +1,23 @@
+name: Build Dreamlings Wii
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    container: devkitpro/devkitppc:latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build
+        run: make
+      - name: Stage SD card
+        run: |
+          mkdir -p sd-card/apps/dreamlings
+          cp boot.dol sd-card/apps/dreamlings/boot.dol
+          cp meta.xml sd-card/apps/dreamlings/meta.xml
+          cp icon.png sd-card/apps/dreamlings/icon.png || true
+      - uses: actions/upload-artifact@v4
+        with:
+          name: dreamlings-wii-sd-card
+          path: sd-card
