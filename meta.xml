@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<app version="1">
+  <name>Deepdreamlings</name>
+  <coder>Coby</coder>
+  <version>0.1-diorama</version>
+  <release_date>20261031000000</release_date>
+  <short_description>Real neural dreaming on Wii, in a 3D diorama world</short_description>
+  <long_description>Deepdreamlings for the Wii. The live tiny CNN from the DS version, on TV in a full GX voxel diorama world: walk the arena, step into a dream gate and watch your dreamling morph, fuse new dreamlings in the slot machine, and collect them in the gallery.
+
+Buttons: D-pad / Nunchuk stick walk and select, A confirm / dream / spin / stop reel, B back / run, - gallery, HOME back to the Homebrew Channel. Progress saves to the SD card.</long_description>
+</app>
